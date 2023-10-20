@@ -1,39 +1,43 @@
-const fs = require('fs');
-const path = require('path');
-const uuid = require('uuid');
-const { ethers } = require('ethers');
-const microtime = require('microtime');
-const EventEmitter = require('events');
+import fs from 'fs';
+import path from 'path';
+import uuid from 'uuid';
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import microtime from 'microtime';
+import EventEmitter from 'events';
+import axios from 'axios';
 
-const {
+import { 
     HTTPS_URL,
     WSS_URL,
     PRIVATE_KEY,
     SIGNING_KEY,
     BOT_ADDRESS,
     ZERO_ADDRESS,
-} = require('./src/constants');
-const { loadAllPoolsFromV2 } = require('./src/pools');
-const { generateTriangularPaths } = require('./src/paths');
-const { getUniswapV2Reserves, batchGetUniswapV2Reserves } = require('./src/multi');
-const { streamNewBlocks, streamPendingTransactions } = require('./src/streams');
-const { getTouchedPoolReserves, calculateNextBlockBaseFee } = require('./src/utils');
-const { Bundler, Flashloan } = require('./src/bundler');
+    UNISWAP_2FACTORY,
+    SUSHI_FACTORY,
+    USDC_ADDRESS,
+} from './src/constants';
+import { loadAllPoolsFromV2 } from './src/pools';
+import { generateTriangularPaths } from './src/paths';
+import { getUniswapV2Reserves, batchGetUniswapV2Reserves, example1 } from './src/multi';
+import { streamNewBlocks, streamPendingTransactions } from './src/streams';
+import { getTouchedPoolReserves, calculateNextBlockBaseFee } from './src/utils';
+import { Bundler, Flashloan } from './src/bundler';
 
-function loggingEventHandler(eventEmitter) {
-    const provider = new ethers.providers.JsonRpcProvider(HTTPS_URL);
-    // Rust pending transaction stream retrieves the full transaction by tx hash.
-    // So we have to do the same thing for JS code.
-    let now;
-    let benchmarkFile = path.join(__dirname, 'benches', '.benchmark.csv');
+function loggingEventHandler(eventEmitter: EventEmitter): void {
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(HTTPS_URL)
+    })
 
-    eventEmitter.on('event', async (event) => {
-        if (event.type == 'pendingTx') {
+    eventEmitter.on('event', async (event: any) => {
+        if (event.type === 'pendingTx') {
             try {
-                let tx = await provider.getTransaction(event.txHash);
-                now = microtime.now();
-                let row = [tx.hash, now].join(',') + '\n';
-                fs.appendFileSync(benchmarkFile, row, { encoding: 'utf-8' });
+                const tx = await client.getTransaction(event.txHash);
+                const now = microtime.now();
+                const row = [tx.hash, now].join(',') + '\n';
+                fs.appendFileSync(path.join(__dirname, 'benches', '.benchmark.csv'), row, { encoding: 'utf-8' });
             } catch {
                 // pass
             }
@@ -41,22 +45,25 @@ function loggingEventHandler(eventEmitter) {
     });
 }
 
-function touchedPoolsEventHandler(eventEmitter) {
-    const provider = new ethers.providers.JsonRpcProvider(HTTPS_URL);
+function touchedPoolsEventHandler(eventEmitter: EventEmitter): void {
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(HTTPS_URL)
+    })
     
-    eventEmitter.on('event', async (event) => {
-        if (event.type == 'block') {
-            let s = microtime.now();
-            let reserves = await getTouchedPoolReserves(provider, event.blockNumber);
-            let took = (microtime.now() - s) / 1000;
-            let now = Date.now();
+    eventEmitter.on('event', async (event: any) => {
+        if (event.type === 'block') {
+            const s = microtime.now();
+            const reserves = await getTouchedPoolReserves(client, event.blockNumber);
+            const took = (microtime.now() - s) / 1000;
+            const now = Date.now();
             console.log(`[${now}] Block #${event.blockNumber} ${Object.keys(reserves).length} pools touched | Took: ${took} ms`);
         }
     });
 }
 
-async function benchmarkStreams(streamFunc, handlerFunc, runTime) {
-    let eventEmitter = new EventEmitter();
+async function benchmarkStreams(streamFunc: Function, handlerFunc: Function, runTime: number): Promise<void> {
+    const eventEmitter = new EventEmitter();
 
     const wss = await streamFunc(WSS_URL, eventEmitter);
     await handlerFunc(eventEmitter);
@@ -67,41 +74,47 @@ async function benchmarkStreams(streamFunc, handlerFunc, runTime) {
     }, runTime * 1000);
 }
 
-function average(array) {
-    return array.reduce((x,y) => x+y)/array.length
-}
-
-async function benchmarkFunction() {
-
-    let i, s, took;
+async function benchmarkFunction(): Promise<void> {
+    let avg, sum, i, s, took, arr;
 
 
 
     // 1. Create HTTP provider
     s = microtime.now();
-    const provider = new ethers.providers.JsonRpcProvider(HTTPS_URL);
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(HTTPS_URL)
+    })
     took = microtime.now() - s;
-    console.log(`1. HTTP provider created | Took: ${took} microsec`);
+    console.log(`1.Viem HTTP provider created | Took: ${took} microsec`);
     //arr.push(took);
     //i++;
     //}
 
     //console.log(average(arr))   
     // 2. Get block info
+    
     i = 0;
-
+    arr = [];
+    avg = 0;
     while (i < 15) {
         s = microtime.now();
-        let block = await provider.getBlock('latest');
+        let block = await client.getBlock('latest');
         took = (microtime.now() - s);
-        console.log(`2. New block: #${block.number} | Took: ${took} microsec`);
+        //console.log(`2. New block: #${block.number} | Took: ${took} microsec`);
+        //console.log(average(arr))
+        arr.push(took);
         i++;
     }
+    sum = arr.reduce((a, b) => a + b, 0);
+    avg = (sum / arr.length) || 0;
+    console.log(`viem ${avg} microseconds`)
+
 
     // Common variables used throughout
+    //const factoryAddresses = [UNISWAP_2FACTORY];
     const factoryAddresses = ['0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac'];
-    const factoryBlocks = [11874229];
-    const usdcAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const factoryBlocks = [10794229];
     const usdcDecimals = 6;
 
     // 3. Retrieving cached pools data
@@ -110,9 +123,14 @@ async function benchmarkFunction() {
     took = (microtime.now() - s) / 1000;
     console.log(`3. Cached ${Object.keys(pools).length} pools data | Took: ${took} ms`);
 
+    let res_example1 = await example1(HTTPS_URL);
+
+    console.log("3.1 first 10 pools");
+    console.log(Object.keys(pools).slice(0, 10));
+
     // 4. Generate triangular arbitrage paths
     s = microtime.now();
-    let paths = generateTriangularPaths(pools, usdcAddress);
+    let paths = generateTriangularPaths(pools, USDC_ADDRESS);
     took = (microtime.now() - s) / 1000;
     console.log(`4. Generated ${paths.length} 3-hop paths | Took: ${took} ms`);
 
@@ -131,7 +149,7 @@ async function benchmarkFunction() {
     took = (microtime.now() - s) / 1000;
     console.log(`5. Bulk multicall result for ${Object.keys(reserves).length} | Took: ${took} ms`);
 
-
+/*
     let streamFunc;
     let handlerFunc;
 
@@ -237,6 +255,7 @@ async function benchmarkFunction() {
     }
 
     console.log(time.reduce((x, y) => x + y, 0));
+/*/
 }
 
 (async () => {

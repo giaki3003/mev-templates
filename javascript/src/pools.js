@@ -97,6 +97,7 @@ function cacheSyncedPools(pools) {
     fs.writeFileSync(cacheFile, data, { encoding: 'utf-8' });
 }
 
+/*
 async function loadAllPoolsFromV2(
     httpsUrl,
     factoryAddresses,
@@ -113,7 +114,7 @@ async function loadAllPoolsFromV2(
     👉 NOTE: the process takes a really long time, because it has room for improvement.
     This function will make requests to the RPC endpoint one batch at a time,
     each looking at events from block range of: [fromBlock, toBlock] chunk size.
-    */
+    *
     let pools = loadCachedPools();
     if (Object.keys(pools).length > 0) {
         return pools;
@@ -189,6 +190,59 @@ async function loadAllPoolsFromV2(
     cacheSyncedPools(pools);
     return pools;
 }
+*/
+
+async function getDecimalsForToken(tokenAddress, decimalsCache, provider) {
+    if (decimalsCache[tokenAddress]) {
+        return decimalsCache[tokenAddress];
+    }
+    const tokenContract = new ethers.Contract(tokenAddress, Erc20Abi, provider);
+    const decimals = await tokenContract.decimals();
+    decimalsCache[tokenAddress] = decimals;
+    return decimals;
+}
+
+async function loadAllPoolsFromV2(httpsUrl, factoryAddresses, fromBlocks, chunk) {
+    const provider = new ethers.providers.JsonRpcProvider(httpsUrl);
+    const toBlock = await provider.getBlockNumber();
+    const decimalsCache = {};
+    const pools = {};
+
+    for (let index = 0; index < factoryAddresses.length; index++) {
+        const factoryAddress = factoryAddresses[index];
+        const v2Factory = new ethers.Contract(factoryAddress, V2FactoryAbi, provider);
+        const requestParams = range(fromBlocks[index], toBlock, chunk);
+        const progress = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
+        progress.start(requestParams.length);
+
+        for (let i = 0; i < requestParams.length; i++) {
+            const [from, to] = requestParams[i];
+            const filter = v2Factory.filters.PairCreated;
+            const events = await v2Factory.queryFilter(filter, from, to);
+
+            for (const event of events) {
+                const [token0, token1] = [event.args[0], event.args[1]];
+                
+                try {
+                    const decimals0 = await getDecimalsForToken(token0, decimalsCache, provider);
+                    const decimals1 = await getDecimalsForToken(token1, decimalsCache, provider);
+                    const pool = new Pool(event.args[2], DexVariant.UniswapV2, token0, token1, decimals0, decimals1, 300);
+                    pools[event.args[2]] = pool;
+                } catch (error) {
+                    logger.warn(`Failed to fetch decimals for tokens: ${token0} / ${token1}. Error: ${error.message}`);
+                }
+            }
+
+            progress.increment();
+        }
+
+        progress.stop();
+    }
+
+    cacheSyncedPools(pools);
+    return pools;
+}
+
 
 module.exports = {
     loadAllPoolsFromV2,

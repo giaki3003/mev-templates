@@ -51,7 +51,7 @@ pub async fn touched_pools_event_handler(provider: Arc<Provider<Ws>>, event_send
                     let s = Instant::now();
                     match get_touched_pool_reserves(provider.clone(), block.block_number).await {
                         Ok(reserves) => {
-                            let took = s.elapsed().as_millis();
+                            let took = s.elapsed().as_micros();
                             let now = Instant::now();
                             println!(
                                 "[{:?}] Block #{:?} {:?} pools touched | Took: {:?} ms",
@@ -108,7 +108,7 @@ pub fn benchmark_function(_: &mut Criterion) {
         let task = async {
             let s = Instant::now();
             let block = client.clone().get_block(BlockNumber::Latest).await.unwrap();
-            let took = s.elapsed().as_millis();
+            let took = s.elapsed().as_micros();
             println!(
                 "2. New block: #{:?} | Took: {:?} ms",
                 block.unwrap().number.unwrap(),
@@ -132,7 +132,7 @@ pub fn benchmark_function(_: &mut Criterion) {
         let pools = load_all_pools_from_v2(env.wss_url.clone(), factory_addresses, factory_blocks)
             .await
             .unwrap();
-        let took = s.elapsed().as_millis();
+        let took = s.elapsed().as_micros();
         println!(
             "3. Cached {:?} pools data | Took: {:?} ms",
             pools.len(),
@@ -152,7 +152,7 @@ pub fn benchmark_function(_: &mut Criterion) {
 
         let s = Instant::now();
         let paths = generate_triangular_paths(&pools, usdc_address);
-        let took = s.elapsed().as_millis();
+        let took = s.elapsed().as_micros();
         println!(
             "4. Generated {:?} 3-hop paths | Took: {:?} ms",
             paths.len(),
@@ -176,7 +176,7 @@ pub fn benchmark_function(_: &mut Criterion) {
         let reserves = get_uniswap_v2_reserves(env.https_url.clone(), pools[0..250].to_vec())
             .await
             .unwrap();
-        let took = s.elapsed().as_millis();
+        let took = s.elapsed().as_micros();
         println!(
             "5. Multicall result for {:?} | Took: {:?} ms",
             reserves.len(),
@@ -195,7 +195,7 @@ pub fn benchmark_function(_: &mut Criterion) {
 
         let s = Instant::now();
         let reserves = batch_get_uniswap_v2_reserves(env.https_url.clone(), pools).await;
-        let took = s.elapsed().as_millis();
+        let took = s.elapsed().as_micros();
         println!(
             "5. Bulk multicall result for {:?} | Took: {:?} ms",
             reserves.len(),
@@ -343,7 +343,7 @@ pub fn benchmark_function(_: &mut Criterion) {
             .unwrap();
         let signed_tx = bundler.sign_tx(order_tx).await.unwrap();
         let bundle = bundler.to_bundle(vec![signed_tx], block_number);
-        let took = s.elapsed().as_millis();
+        let took = s.elapsed().as_micros();
         println!("9. Creating Flashbots bundle | Took: {:?} ms", took);
         println!("{:?}", bundle);
     };
@@ -389,7 +389,7 @@ pub fn benchmark_function(_: &mut Criterion) {
             };
             let signed_tx = bundler.sign_tx(tx).await.unwrap();
             let bundle = bundler.to_bundle(vec![signed_tx], block.number.unwrap());
-            let took = s.elapsed().as_millis();
+            let took = s.elapsed().as_micros();
             println!("- Creating bundle took: {:?} ms", took);
 
             let s = Instant::now();
@@ -408,7 +408,7 @@ pub fn benchmark_function(_: &mut Criterion) {
                     println!("Simulation revert: {r:?}");
                 }
             }
-            let took = s.elapsed().as_millis();
+            let took = s.elapsed().as_micros();
             println!("- Running simulation took: {:?} ms", took);
 
             let s = Instant::now();
@@ -419,8 +419,8 @@ pub fn benchmark_function(_: &mut Criterion) {
                 .await
                 .unwrap();
 
-            let took = s.elapsed().as_millis();
-            let total_took = _s.elapsed().as_millis();
+            let took = s.elapsed().as_micros();
+            let total_took = _s.elapsed().as_micros();
             println!(
                 "10. Sending Flashbots bundle ({:?}) | Took: {:?} ms",
                 pending_bundle.bundle_hash, took
